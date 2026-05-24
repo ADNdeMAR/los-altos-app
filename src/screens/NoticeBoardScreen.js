@@ -3,6 +3,7 @@ import {
   StyleSheet, View, Text, FlatList, TouchableOpacity,
   ActivityIndicator, Image, Alert, TextInput, Modal, ScrollView
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
@@ -13,6 +14,7 @@ export default function NoticeBoardScreen() {
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [editItem, setEditItem] = useState(null);
   const [form, setForm] = useState({ title: '', content: '' });
   const [photoUri, setPhotoUri] = useState(null);
 
@@ -51,23 +53,33 @@ export default function NoticeBoardScreen() {
 
   const handleSave = async () => {
     if (!form.title.trim()) { Alert.alert('Error', 'El título es requerido.'); return; }
-    if (!form.content.trim() && !photoUri) { Alert.alert('Error', 'Debes añadir contenido o una foto.'); return; }
+    if (!form.content.trim() && !photoUri && !editItem) { Alert.alert('Error', 'Debes añadir contenido o una foto.'); return; }
 
     setSaving(true);
     try {
-      let photoUrl = null;
-      if (photoUri) photoUrl = await uploadPhoto(photoUri);
-      
-      const { error } = await supabase.from('cocode_notices').insert([{
-        title: form.title,
-        content: form.content,
-        photo_url: photoUrl,
-        author_id: session.user.id,
-      }]);
-      
-      if (error) throw error;
-      Alert.alert('✅', 'Aviso publicado exitosamente.');
+      let photoUrl = editItem ? editItem.photo_url : null;
+      if (photoUri && photoUri !== photoUrl) photoUrl = await uploadPhoto(photoUri);
+
+      if (editItem) {
+        const { error } = await supabase.from('cocode_notices').update({
+          title: form.title,
+          content: form.content,
+          photo_url: photoUrl,
+        }).eq('id', editItem.id);
+        if (error) throw error;
+        Alert.alert('✅', 'Aviso actualizado.');
+      } else {
+        const { error } = await supabase.from('cocode_notices').insert([{
+          title: form.title,
+          content: form.content,
+          photo_url: photoUrl,
+          author_id: session.user.id,
+        }]);
+        if (error) throw error;
+        Alert.alert('✅', 'Aviso publicado exitosamente.');
+      }
       setModalVisible(false);
+      setEditItem(null);
       setForm({ title: '', content: '' });
       setPhotoUri(null);
       fetchNotices();
@@ -76,6 +88,20 @@ export default function NoticeBoardScreen() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const openEdit = (item) => {
+    setEditItem(item);
+    setForm({ title: item.title, content: item.content || '' });
+    setPhotoUri(item.photo_url || null);
+    setModalVisible(true);
+  };
+
+  const openCreate = () => {
+    setEditItem(null);
+    setForm({ title: '', content: '' });
+    setPhotoUri(null);
+    setModalVisible(true);
   };
 
   const handleDelete = async (id) => {
@@ -107,9 +133,14 @@ export default function NoticeBoardScreen() {
             <Text style={styles.cardDate}>{date}</Text>
           </View>
           {isAdmin && (
-            <TouchableOpacity onPress={() => handleDelete(item.id)} style={styles.deleteBtn}>
-              <Text style={styles.deleteBtnText}>🗑️</Text>
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', gap: 4 }}>
+              <TouchableOpacity onPress={() => openEdit(item)} style={styles.deleteBtn}>
+                <Text style={styles.deleteBtnText}>✏️</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => handleDelete(item.id)} style={styles.deleteBtn}>
+                <Text style={styles.deleteBtnText}>🗑️</Text>
+              </TouchableOpacity>
+            </View>
           )}
         </View>
         {item.content ? <Text style={styles.cardContent}>{item.content}</Text> : null}
@@ -121,14 +152,14 @@ export default function NoticeBoardScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
         <View>
           <Text style={styles.headerTitle}>📢 Avisos COCODES</Text>
           <Text style={styles.headerSub}>Tablero de anuncios a la comunidad</Text>
         </View>
         {isAdmin && (
-          <TouchableOpacity style={styles.addBtn} onPress={() => setModalVisible(true)}>
+          <TouchableOpacity style={styles.addBtn} onPress={openCreate}>
             <Text style={styles.addBtnText}>+ Crear</Text>
           </TouchableOpacity>
         )}
@@ -158,7 +189,7 @@ export default function NoticeBoardScreen() {
         <View style={styles.modalOverlay}>
           <ScrollView>
             <View style={styles.modalBox}>
-              <Text style={styles.modalTitle}>Publicar Aviso</Text>
+              <Text style={styles.modalTitle}>{editItem ? 'Editar Aviso' : 'Publicar Aviso'}</Text>
               <Text style={styles.modalLabel}>Título *</Text>
               <TextInput
                 style={styles.modalInput}
@@ -196,16 +227,16 @@ export default function NoticeBoardScreen() {
               )}
               
               <TouchableOpacity style={styles.saveBtn} onPress={handleSave} disabled={saving}>
-                {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>Publicar</Text>}
+                {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>{editItem ? 'Guardar Cambios' : 'Publicar'}</Text>}
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => setModalVisible(false)}>
+              <TouchableOpacity onPress={() => { setModalVisible(false); setEditItem(null); }}>
                 <Text style={styles.cancelText}>Cancelar</Text>
               </TouchableOpacity>
             </View>
           </ScrollView>
         </View>
       </Modal>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -213,7 +244,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fffbeb' },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: {
-    backgroundColor: '#fff', paddingTop: 56, paddingBottom: 16,
+    backgroundColor: '#fff', paddingVertical: 16,
     paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#fde68a',
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end',
   },

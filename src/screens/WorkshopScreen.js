@@ -3,6 +3,7 @@ import {
   StyleSheet, View, Text, FlatList, TouchableOpacity,
   ActivityIndicator, Image, Alert, TextInput, Modal, ScrollView
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { supabase } from '../lib/supabase';
@@ -25,6 +26,7 @@ export default function WorkshopScreen({ route }) {
   const [userLocation, setUserLocation] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [editItem, setEditItem] = useState(null);
   const [form, setForm] = useState({ name: '', description: '', phone: '', hours: '' });
   const [photoUri, setPhotoUri] = useState(null);
 
@@ -77,31 +79,46 @@ export default function WorkshopScreen({ route }) {
     if (!form.name.trim()) { Alert.alert('Error', 'El nombre es requerido.'); return; }
     setSaving(true);
     try {
-      let lat = null, lon = null;
-      if (route?.params?.mapLocation) {
-        lat = route.params.mapLocation.latitude;
-        lon = route.params.mapLocation.longitude;
-      } else {
-        const loc = await Location.getCurrentPositionAsync({});
-        lat = loc.coords.latitude;
-        lon = loc.coords.longitude;
-      }
+      let photoUrl = editItem ? editItem.photo_url : null;
+      if (photoUri && photoUri !== photoUrl) photoUrl = await uploadPhoto(photoUri);
 
-      let photoUrl = null;
-      if (photoUri) photoUrl = await uploadPhoto(photoUri);
-      const { error } = await supabase.from('workshops').insert([{
-        name: form.name,
-        description: form.description,
-        phone: form.phone,
-        hours: form.hours,
-        latitude: lat,
-        longitude: lon,
-        photo_url: photoUrl,
-        created_by: session.user.id,
-      }]);
-      if (error) throw error;
-      Alert.alert('✅', 'Taller agregado.');
+      if (editItem) {
+        const { error } = await supabase.from('workshops').update({
+          name: form.name,
+          description: form.description,
+          phone: form.phone,
+          hours: form.hours,
+          photo_url: photoUrl,
+        }).eq('id', editItem.id);
+        if (error) throw error;
+        Alert.alert('✅', 'Taller actualizado.');
+      } else {
+        let lat = null, lon = null;
+        if (route?.params?.mapLocation) {
+          lat = route.params.mapLocation.latitude;
+          lon = route.params.mapLocation.longitude;
+        } else {
+          const loc = await Location.getCurrentPositionAsync({});
+          lat = loc.coords.latitude;
+          lon = loc.coords.longitude;
+        }
+        let photoUrl2 = null;
+        if (photoUri) photoUrl2 = await uploadPhoto(photoUri);
+        const { error } = await supabase.from('workshops').insert([{
+          name: form.name,
+          description: form.description,
+          phone: form.phone,
+          hours: form.hours,
+          latitude: lat,
+          longitude: lon,
+          photo_url: photoUrl2,
+          created_by: session.user.id,
+        }]);
+        if (error) throw error;
+        Alert.alert('✅', 'Taller agregado.');
+      }
       setModalVisible(false);
+      setEditItem(null);
       setForm({ name: '', description: '', phone: '', hours: '' });
       setPhotoUri(null);
       fetchWorkshops();
@@ -110,6 +127,20 @@ export default function WorkshopScreen({ route }) {
     } finally {
       setSaving(false);
     }
+  };
+
+  const openEdit = (item) => {
+    setEditItem(item);
+    setForm({ name: item.name, description: item.description || '', phone: item.phone || '', hours: item.hours || '' });
+    setPhotoUri(item.photo_url || null);
+    setModalVisible(true);
+  };
+
+  const openCreate = () => {
+    setEditItem(null);
+    setForm({ name: '', description: '', phone: '', hours: '' });
+    setPhotoUri(null);
+    setModalVisible(true);
   };
 
   const handleDelete = async (id) => {
@@ -148,18 +179,26 @@ export default function WorkshopScreen({ route }) {
         <View style={styles.cardBody}>
           <View style={styles.cardTopRow}>
             <Text style={styles.cardName}>{item.name}</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              {dist !== null && (
+              {isAdmin && (
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  {dist !== null && (
+                    <View style={styles.distBadge}>
+                      <Text style={styles.distText}>{dist < 1 ? `${(dist * 1000).toFixed(0)} m` : `${dist.toFixed(1)} km`}</Text>
+                    </View>
+                  )}
+                  <TouchableOpacity onPress={() => openEdit(item)} style={{ marginLeft: 8 }}>
+                    <Text style={{ fontSize: 18 }}>✏️</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => handleDelete(item.id)} style={{ marginLeft: 8 }}>
+                    <Text style={{ fontSize: 18 }}>🗑️</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+              {!isAdmin && dist !== null && (
                 <View style={styles.distBadge}>
                   <Text style={styles.distText}>{dist < 1 ? `${(dist * 1000).toFixed(0)} m` : `${dist.toFixed(1)} km`}</Text>
                 </View>
               )}
-              {isAdmin && (
-                <TouchableOpacity onPress={() => handleDelete(item.id)} style={{ marginLeft: 8 }}>
-                  <Text style={{ fontSize: 18 }}>🗑️</Text>
-                </TouchableOpacity>
-              )}
-            </View>
           </View>
           {item.description ? <Text style={styles.cardDesc}>{item.description}</Text> : null}
           <View style={styles.infoRow}>
@@ -178,14 +217,14 @@ export default function WorkshopScreen({ route }) {
   };
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
-        <View>
+        <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>🔧 Talleres Mecánicos</Text>
           <Text style={styles.headerSub}>{workshops.length} taller(es) registrado(s)</Text>
         </View>
         {isAdmin && (
-          <TouchableOpacity style={styles.addBtn} onPress={() => setModalVisible(true)}>
+          <TouchableOpacity style={styles.addBtn} onPress={openCreate}>
             <Text style={styles.addBtnText}>+ Agregar</Text>
           </TouchableOpacity>
         )}
@@ -193,7 +232,7 @@ export default function WorkshopScreen({ route }) {
 
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#0ea5e9" />
+          <ActivityIndicator size="large" color="#0c3563" />
         </View>
       ) : (
         <FlatList
@@ -214,7 +253,7 @@ export default function WorkshopScreen({ route }) {
         <View style={styles.modalOverlay}>
           <ScrollView>
             <View style={styles.modalBox}>
-              <Text style={styles.modalTitle}>Agregar Taller</Text>
+              <Text style={styles.modalTitle}>{editItem ? 'Editar Taller' : 'Agregar Taller'}</Text>
 
               {[
                 { key: 'name', label: 'Nombre *', placeholder: 'Ej. Taller El Cuchumatán' },
@@ -259,16 +298,16 @@ export default function WorkshopScreen({ route }) {
                 {route?.params?.mapLocation ? '📍 Ubicación seleccionada en el mapa' : '📍 Se usará tu ubicación actual'}
               </Text>
               <TouchableOpacity style={styles.saveBtn} onPress={handleSave} disabled={saving}>
-                {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>Guardar</Text>}
+                {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>{editItem ? 'Guardar Cambios' : 'Guardar'}</Text>}
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => setModalVisible(false)}>
+              <TouchableOpacity onPress={() => { setModalVisible(false); setEditItem(null); }}>
                 <Text style={styles.cancelText}>Cancelar</Text>
               </TouchableOpacity>
             </View>
           </ScrollView>
         </View>
       </Modal>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -276,14 +315,14 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f0f9ff' },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: {
-    backgroundColor: '#fff', paddingTop: 56, paddingBottom: 16,
-    paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#e0f2fe',
+    backgroundColor: '#fff', paddingTop: 16, paddingBottom: 16,
+    paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#bae6fd',
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end',
   },
   headerTitle: { fontSize: 24, fontWeight: 'bold', color: '#0f172a' },
   headerSub: { fontSize: 14, color: '#64748b', marginTop: 4 },
   addBtn: {
-    backgroundColor: '#0ea5e9', paddingHorizontal: 16, paddingVertical: 8,
+    backgroundColor: '#0c3563', paddingHorizontal: 16, paddingVertical: 8,
     borderRadius: 20, elevation: 2,
   },
   addBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
@@ -302,7 +341,7 @@ const styles = StyleSheet.create({
   cardBody: { padding: 16 },
   cardTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   cardName: { fontSize: 18, fontWeight: 'bold', color: '#0f172a', flex: 1, marginRight: 8 },
-  distBadge: { backgroundColor: '#0ea5e9', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+  distBadge: { backgroundColor: '#0c3563', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
   distText: { color: '#fff', fontWeight: 'bold', fontSize: 12 },
   cardDesc: { fontSize: 14, color: '#475569', marginBottom: 12, lineHeight: 20 },
   infoRow: { flexDirection: 'row', gap: 16 },
@@ -329,12 +368,12 @@ const styles = StyleSheet.create({
     padding: 14, alignItems: 'center', backgroundColor: '#f0f9ff',
   },
   photoIcon: { fontSize: 28, marginBottom: 4 },
-  photoBtnText: { fontSize: 13, fontWeight: '600', color: '#0ea5e9' },
+  photoBtnText: { fontSize: 13, fontWeight: '600', color: '#0c3563' },
   previewPhoto: { width: '100%', height: 180, borderRadius: 12, marginBottom: 10 },
   removePhoto: { color: '#ef4444', textAlign: 'center', fontWeight: '600', marginBottom: 16 },
   locationNote: { color: '#64748b', fontSize: 13, marginBottom: 20, textAlign: 'center' },
   saveBtn: {
-    backgroundColor: '#0ea5e9', padding: 16, borderRadius: 12,
+    backgroundColor: '#0c3563', padding: 16, borderRadius: 12,
     alignItems: 'center', marginBottom: 12,
   },
   saveBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },

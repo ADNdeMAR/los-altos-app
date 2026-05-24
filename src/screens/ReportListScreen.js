@@ -3,6 +3,7 @@ import {
   StyleSheet, View, Text, FlatList, TouchableOpacity,
   ActivityIndicator, Image, RefreshControl, Alert
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 
@@ -20,7 +21,7 @@ function timeAgo(dateStr) {
   return `hace ${Math.floor(diff / 86400)} días`;
 }
 
-export default function ReportListScreen() {
+export default function ReportListScreen({ navigation }) {
   const { isAdmin } = useAuth();
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -63,7 +64,7 @@ export default function ReportListScreen() {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#0ea5e9" />
+        <ActivityIndicator size="large" color="#0c3563" />
         <Text style={styles.loadingText}>Cargando reportes...</Text>
       </View>
     );
@@ -85,9 +86,14 @@ export default function ReportListScreen() {
             <Text style={styles.statusText}>ACTIVO</Text>
           </View>
           {isAdmin && (
-            <TouchableOpacity onPress={() => handleDelete(item.id)} style={{ marginLeft: 8 }}>
-              <Text style={{ fontSize: 18 }}>🗑️</Text>
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row' }}>
+              <TouchableOpacity onPress={() => navigation.navigate('Mapa', { screen: 'Report', params: { editReport: item } })} style={{ marginLeft: 8 }}>
+                <Text style={{ fontSize: 18 }}>✏️</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => handleDelete(item.id)} style={{ marginLeft: 16 }}>
+                <Text style={{ fontSize: 18 }}>🗑️</Text>
+              </TouchableOpacity>
+            </View>
           )}
         </View>
         {item.description ? (
@@ -108,7 +114,7 @@ export default function ReportListScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>📋 Reportes Activos</Text>
         <Text style={styles.headerSub}>{reports.length} incidente(s) reportado(s)</Text>
@@ -118,7 +124,7 @@ export default function ReportListScreen() {
         keyExtractor={item => item.id}
         renderItem={renderItem}
         contentContainerStyle={styles.list}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#0ea5e9']} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#0c3563']} />}
         ListEmptyComponent={
           <View style={styles.empty}>
             <Text style={styles.emptyEmoji}>✅</Text>
@@ -127,7 +133,7 @@ export default function ReportListScreen() {
           </View>
         }
       />
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -136,7 +142,7 @@ const styles = StyleSheet.create({
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f8fafc' },
   loadingText: { marginTop: 12, color: '#475569', fontSize: 16 },
   header: {
-    backgroundColor: '#fff', paddingTop: 56, paddingBottom: 16,
+    backgroundColor: '#fff', paddingBottom: 16, paddingTop: 16,
     paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#e2e8f0',
   },
   headerTitle: { fontSize: 24, fontWeight: 'bold', color: '#0f172a' },

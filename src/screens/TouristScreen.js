@@ -3,6 +3,7 @@ import {
   StyleSheet, View, Text, FlatList, TouchableOpacity,
   ActivityIndicator, Image, Alert, TextInput, Modal, ScrollView
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { supabase } from '../lib/supabase';
@@ -14,6 +15,7 @@ export default function TouristScreen({ route }) {
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [editItem, setEditItem] = useState(null); // null = crear, objeto = editar
   const [form, setForm] = useState({ name: '', description: '' });
   const [photoUri, setPhotoUri] = useState(null);
 
@@ -59,29 +61,42 @@ export default function TouristScreen({ route }) {
     if (!form.name.trim()) { Alert.alert('Error', 'El nombre es requerido.'); return; }
     setSaving(true);
     try {
-      let lat = null, lon = null;
-      if (route?.params?.mapLocation) {
-        lat = route.params.mapLocation.latitude;
-        lon = route.params.mapLocation.longitude;
-      } else {
-        const loc = await Location.getCurrentPositionAsync({});
-        lat = loc.coords.latitude;
-        lon = loc.coords.longitude;
-      }
+      let photoUrl = editItem ? editItem.photo_url : null;
+      if (photoUri && photoUri !== photoUrl) photoUrl = await uploadPhoto(photoUri);
 
-      let photoUrl = null;
-      if (photoUri) photoUrl = await uploadPhoto(photoUri);
-      const { error } = await supabase.from('tourist_spots').insert([{
-        name: form.name,
-        description: form.description,
-        latitude: lat,
-        longitude: lon,
-        photo_url: photoUrl,
-        created_by: session.user.id,
-      }]);
-      if (error) throw error;
-      Alert.alert('✅', 'Punto turístico agregado.');
+      if (editItem) {
+        // Editar existente
+        const { error } = await supabase.from('tourist_spots').update({
+          name: form.name,
+          description: form.description,
+          photo_url: photoUrl,
+        }).eq('id', editItem.id);
+        if (error) throw error;
+        Alert.alert('✅', 'Punto turístico actualizado.');
+      } else {
+        // Crear nuevo
+        let lat = null, lon = null;
+        if (route?.params?.mapLocation) {
+          lat = route.params.mapLocation.latitude;
+          lon = route.params.mapLocation.longitude;
+        } else {
+          const loc = await Location.getCurrentPositionAsync({});
+          lat = loc.coords.latitude;
+          lon = loc.coords.longitude;
+        }
+        const { error } = await supabase.from('tourist_spots').insert([{
+          name: form.name,
+          description: form.description,
+          latitude: lat,
+          longitude: lon,
+          photo_url: photoUrl,
+          created_by: session.user.id,
+        }]);
+        if (error) throw error;
+        Alert.alert('✅', 'Punto turístico agregado.');
+      }
       setModalVisible(false);
+      setEditItem(null);
       setForm({ name: '', description: '' });
       setPhotoUri(null);
       fetchSpots();
@@ -90,6 +105,20 @@ export default function TouristScreen({ route }) {
     } finally {
       setSaving(false);
     }
+  };
+
+  const openEdit = (item) => {
+    setEditItem(item);
+    setForm({ name: item.name, description: item.description || '' });
+    setPhotoUri(item.photo_url || null);
+    setModalVisible(true);
+  };
+
+  const openCreate = () => {
+    setEditItem(null);
+    setForm({ name: '', description: '' });
+    setPhotoUri(null);
+    setModalVisible(true);
   };
 
   const handleDelete = async (id) => {
@@ -124,9 +153,14 @@ export default function TouristScreen({ route }) {
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <Text style={styles.cardName}>{item.name}</Text>
           {isAdmin && (
-            <TouchableOpacity onPress={() => handleDelete(item.id)}>
-              <Text style={{ fontSize: 18 }}>🗑️</Text>
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TouchableOpacity onPress={() => openEdit(item)}>
+                <Text style={{ fontSize: 18 }}>✏️</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => handleDelete(item.id)}>
+                <Text style={{ fontSize: 18 }}>🗑️</Text>
+              </TouchableOpacity>
+            </View>
           )}
         </View>
         {item.description ? <Text style={styles.cardDesc}>{item.description}</Text> : null}
@@ -138,14 +172,14 @@ export default function TouristScreen({ route }) {
   );
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
-        <View>
+        <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>🏔️ Puntos Turísticos</Text>
           <Text style={styles.headerSub}>{spots.length} lugar(es) registrado(s)</Text>
         </View>
         {isAdmin && (
-          <TouchableOpacity style={styles.addBtn} onPress={() => setModalVisible(true)}>
+          <TouchableOpacity style={styles.addBtn} onPress={openCreate}>
             <Text style={styles.addBtnText}>+ Agregar</Text>
           </TouchableOpacity>
         )}
@@ -175,7 +209,7 @@ export default function TouristScreen({ route }) {
         <View style={styles.modalOverlay}>
           <ScrollView>
             <View style={styles.modalBox}>
-              <Text style={styles.modalTitle}>Agregar Punto Turístico</Text>
+              <Text style={styles.modalTitle}>{editItem ? 'Editar Punto Turístico' : 'Agregar Punto Turístico'}</Text>
               <Text style={styles.modalLabel}>Nombre *</Text>
               <TextInput
                 style={styles.modalInput}
@@ -215,16 +249,16 @@ export default function TouristScreen({ route }) {
                 {route?.params?.mapLocation ? '📍 Ubicación seleccionada en el mapa' : '📍 Se usará tu ubicación actual'}
               </Text>
               <TouchableOpacity style={styles.saveBtn} onPress={handleSave} disabled={saving}>
-                {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>Guardar</Text>}
+                {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>{editItem ? 'Guardar Cambios' : 'Guardar'}</Text>}
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => setModalVisible(false)}>
+              <TouchableOpacity onPress={() => { setModalVisible(false); setEditItem(null); }}>
                 <Text style={styles.cancelText}>Cancelar</Text>
               </TouchableOpacity>
             </View>
           </ScrollView>
         </View>
       </Modal>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -232,8 +266,8 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f0fdf4' },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: {
-    backgroundColor: '#fff', paddingTop: 56, paddingBottom: 16,
-    paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#d1fae5',
+    backgroundColor: '#fff', paddingTop: 16, paddingBottom: 16,
+    paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#bbf7d0',
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end',
   },
   headerTitle: { fontSize: 24, fontWeight: 'bold', color: '#0f172a' },

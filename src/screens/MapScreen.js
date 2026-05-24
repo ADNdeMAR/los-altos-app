@@ -1,18 +1,66 @@
 import React, { useEffect, useState, useRef } from 'react';
 import {
   StyleSheet, View, TouchableOpacity, Text, ActivityIndicator,
-  Alert, Modal, TextInput, ScrollView
+  Alert, Modal, TextInput, ScrollView, Linking
 } from 'react-native';
 import MapView, { Marker, Polyline, Callout } from 'react-native-maps';
+import Svg, { Path, Circle, Text as SvgText } from 'react-native-svg';
 import * as Location from 'expo-location';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 
 const TYPE_CONFIG = {
-  DERRUMBE:      { emoji: '⛰️', color: '#ef4444' },
-  CAMINO_DAÑADO: { emoji: '🚧', color: '#f97316' },
-  BLOQUEO:       { emoji: '⛔', color: '#eab308' },
+  DERRUMBE:      { label: '▲', color: '#ef4444' },
+  CAMINO_DAÑADO: { label: '~', color: '#f97316' },
+  BLOQUEO:       { label: 'X', color: '#dc2626' },
 };
+
+// Marcador vectorial tipo Google Maps — sin emojis, sin recortes en Android
+function PinMarker({ color = '#ef4444', label = '!', big = false, count = null }) {
+  const W = big ? 44 : 36;
+  const H = big ? 60 : 50;
+  const fontSize = big ? 15 : 13;
+  const cy = big ? 20 : 17;
+  const countFontSize = 9;
+  return (
+    <Svg width={W} height={H} viewBox={`0 0 ${W} ${H}`}>
+      {/* Sombra simulada */}
+      <Path
+        d={`M${W/2},${H-3} C${W/2-6},${H-3} ${W/2-6},${H} ${W/2},${H} C${W/2+6},${H} ${W/2+6},${H-3} ${W/2},${H-3} Z`}
+        fill="rgba(0,0,0,0.18)"
+      />
+      {/* Cuerpo del pin (teardrop) */}
+      <Path
+        d={`M${W/2},2 C${W*0.22},2 2,${H*0.22} 2,${cy+2} C2,${H*0.62} ${W/2},${H-6} ${W/2},${H-6} C${W/2},${H-6} ${W-2},${H*0.62} ${W-2},${cy+2} C${W-2},${H*0.22} ${W*0.78},2 ${W/2},2 Z`}
+        fill={color}
+        stroke="rgba(0,0,0,0.22)"
+        strokeWidth={1.2}
+      />
+      {/* Circulo blanco interior */}
+      <Circle cx={W/2} cy={cy} r={big ? 12 : 10} fill="rgba(255,255,255,0.22)" />
+      {/* Etiqueta / símbolo */}
+      <SvgText
+        x={W/2}
+        y={cy + fontSize * 0.38}
+        textAnchor="middle"
+        fontSize={fontSize}
+        fontWeight="bold"
+        fill="white"
+      >
+        {label}
+      </SvgText>
+      {/* Badge de conteo para clusters */}
+      {count !== null && (
+        <>
+          <Circle cx={W - 4} cy={4} r={7} fill="#1e293b" stroke="white" strokeWidth={1} />
+          <SvgText x={W - 4} y={4 + countFontSize * 0.38} textAnchor="middle" fontSize={countFontSize} fontWeight="bold" fill="white">
+            {count}
+          </SvgText>
+        </>
+      )}
+    </Svg>
+  );
+}
 
 function clusterReports(reports) {
   const THRESHOLD = 0.005; // grados (~500m)
@@ -95,7 +143,7 @@ export default function MapScreen({ navigation }) {
   if (loadingMap || !location) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#0ea5e9" />
+        <ActivityIndicator size="large" color="#0c3563" />
         <Text style={styles.loadingText}>Obteniendo señal GPS...</Text>
       </View>
     );
@@ -136,15 +184,18 @@ export default function MapScreen({ navigation }) {
               key={`cluster-${idx}`}
               coordinate={{ latitude: center.latitude, longitude: center.longitude }}
             >
-              <View style={[styles.markerContainer, isBig && styles.markerBig, { borderColor: cfg.color }]}>
-                <Text style={isBig ? styles.markerEmojiBig : styles.markerEmoji}>{cfg.emoji}</Text>
-                {isBig && <Text style={styles.clusterCount}>{group.length}</Text>}
-              </View>
-              <Callout>
+              <PinMarker
+                color={cfg.color}
+                label={cfg.label || '!'}
+                big={isBig}
+                count={group.length > 1 ? group.length : null}
+              />
+              <Callout onPress={() => navigation.navigate('Reportes')} tooltip={false}>
                 <View style={styles.callout}>
-                  <Text style={styles.calloutTitle}>{type.replace('_', ' ')}</Text>
+                  <Text style={styles.calloutTitle}>{type.replace(/_/g, ' ')}</Text>
                   <Text style={styles.calloutSub}>{group.length} reporte(s)</Text>
                   <Text style={styles.calloutDesc}>{group[0].description || 'Sin descripción'}</Text>
+                  <Text style={styles.calloutLink}>📋 Ver lista de reportes →</Text>
                 </View>
               </Callout>
             </Marker>
@@ -157,13 +208,20 @@ export default function MapScreen({ navigation }) {
             key={`t-${spot.id}`}
             coordinate={{ latitude: spot.latitude, longitude: spot.longitude }}
           >
-            <View style={[styles.markerContainer, { borderColor: '#22c55e' }]}>
-              <Text style={styles.markerEmoji}>📸</Text>
-            </View>
-            <Callout>
+              <PinMarker color="#22c55e" label="★" />
+            <Callout
+              onPress={() => {
+                if (spot.latitude && spot.longitude) {
+                  Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${spot.latitude},${spot.longitude}`);
+                }
+              }}
+              tooltip={false}
+            >
               <View style={styles.callout}>
                 <Text style={styles.calloutTitle}>{spot.name}</Text>
                 <Text style={styles.calloutDesc}>{spot.description}</Text>
+                <Text style={styles.calloutLink}>🗺️ Cómo llegar →</Text>
+                <Text style={styles.calloutLinkSub}>Toca para abrir en Google Maps</Text>
               </View>
             </Callout>
           </Marker>
@@ -175,14 +233,21 @@ export default function MapScreen({ navigation }) {
             key={`w-${w.id}`}
             coordinate={{ latitude: w.latitude, longitude: w.longitude }}
           >
-            <View style={[styles.markerContainer, { borderColor: '#0ea5e9' }]}>
-              <Text style={styles.markerEmoji}>🔧</Text>
-            </View>
-            <Callout>
+              <PinMarker color="#0c3563" label="⚙" />
+            <Callout
+              onPress={() => {
+                if (w.latitude && w.longitude) {
+                  Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${w.latitude},${w.longitude}`);
+                }
+              }}
+              tooltip={false}
+            >
               <View style={styles.callout}>
                 <Text style={styles.calloutTitle}>{w.name}</Text>
                 <Text style={styles.calloutSub}>📞 {w.phone || 'Sin teléfono'}</Text>
                 <Text style={styles.calloutDesc}>🕐 {w.hours || 'Sin horario'}</Text>
+                <Text style={styles.calloutLink}>🗺️ Cómo llegar →</Text>
+                <Text style={styles.calloutLinkSub}>Toca para abrir en Google Maps</Text>
               </View>
             </Callout>
           </Marker>
@@ -288,25 +353,13 @@ const styles = StyleSheet.create({
     borderRadius: 20, elevation: 3,
   },
   headerBtnText: { color: '#0f172a', fontWeight: 'bold' },
-  markerContainer: {
-    backgroundColor: 'white', borderRadius: 20,
-    width: 38, height: 38,
-    justifyContent: 'center', alignItems: 'center',
-    borderWidth: 2, elevation: 4,
-  },
-  markerBig: { width: 48, height: 48, borderRadius: 24, borderWidth: 3 },
-  markerEmoji: { fontSize: 18, textAlign: 'center' },
-  markerEmojiBig: { fontSize: 24, textAlign: 'center' },
-  clusterCount: {
-    position: 'absolute', top: -4, right: -4,
-    backgroundColor: '#ef4444', color: '#fff',
-    fontSize: 11, fontWeight: 'bold',
-    borderRadius: 10, paddingHorizontal: 5,
-  },
-  callout: { width: 180, padding: 8 },
-  calloutTitle: { fontWeight: 'bold', fontSize: 14, marginBottom: 4 },
+  // Marcadores SVG — no necesitan estilos de contenedor
+  callout: { width: 210, padding: 10 },
+  calloutTitle: { fontWeight: 'bold', fontSize: 14, marginBottom: 4, color: '#0f172a' },
   calloutSub: { fontSize: 12, color: '#475569', marginBottom: 2 },
-  calloutDesc: { fontSize: 12, color: '#64748b' },
+  calloutDesc: { fontSize: 12, color: '#64748b', marginBottom: 6 },
+  calloutLink: { fontSize: 13, color: '#0c3563', fontWeight: 'bold', marginTop: 4 },
+  calloutLinkSub: { fontSize: 10, color: '#94a3b8', marginTop: 2 },
   fab: {
     position: 'absolute', bottom: 40, alignSelf: 'center',
     flexDirection: 'row', alignItems: 'center',
@@ -315,7 +368,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3, shadowRadius: 3,
   },
   fabUser: { backgroundColor: '#ef4444' },
-  fabAdmin: { backgroundColor: '#0ea5e9' },
+  fabAdmin: { backgroundColor: '#0c3563' },
   fabIcon: { fontSize: 24, marginRight: 8 },
   fabText: { color: '#fff', fontSize: 20, fontWeight: '900' },
   crosshair: {

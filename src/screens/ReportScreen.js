@@ -14,11 +14,11 @@ const INCIDENT_TYPES = [
 ];
 
 export default function ReportScreen({ route, navigation }) {
-  const { userLocation } = route.params;
+  const { userLocation, editReport } = route.params || {};
   const { session } = useAuth();
-  const [selectedType, setSelectedType] = useState(null);
-  const [description, setDescription] = useState('');
-  const [photoUri, setPhotoUri] = useState(null);
+  const [selectedType, setSelectedType] = useState(editReport ? editReport.incident_type : null);
+  const [description, setDescription] = useState(editReport ? editReport.description || '' : '');
+  const [photoUri, setPhotoUri] = useState(editReport ? editReport.photo_url : null);
   const [loading, setLoading] = useState(false);
 
   const takePhoto = async () => {
@@ -75,20 +75,32 @@ export default function ReportScreen({ route, navigation }) {
     }
     setLoading(true);
     try {
-      let photoUrl = null;
-      if (photoUri) {
+      let photoUrl = editReport ? editReport.photo_url : null;
+      if (photoUri && photoUri !== photoUrl) {
         photoUrl = await uploadPhoto(photoUri);
       }
-      const { error } = await supabase.from('incident_reports').insert([{
-        user_id: session.user.id,
-        incident_type: selectedType,
-        description,
-        latitude: userLocation.latitude,
-        longitude: userLocation.longitude,
-        location: `POINT(${userLocation.longitude} ${userLocation.latitude})`,
-        photo_url: photoUrl,
-        status: 'ACTIVO',
-      }]);
+      
+      let error = null;
+      if (editReport) {
+        const { error: updateError } = await supabase.from('incident_reports').update({
+          incident_type: selectedType,
+          description,
+          photo_url: photoUrl,
+        }).eq('id', editReport.id);
+        error = updateError;
+      } else {
+        const { error: insertError } = await supabase.from('incident_reports').insert([{
+          user_id: session.user.id,
+          incident_type: selectedType,
+          description,
+          latitude: userLocation?.latitude,
+          longitude: userLocation?.longitude,
+          location: userLocation ? `POINT(${userLocation.longitude} ${userLocation.latitude})` : null,
+          photo_url: photoUrl,
+          status: 'ACTIVO',
+        }]);
+        error = insertError;
+      }
       if (error) throw error;
       Alert.alert('¡Gracias!', 'Tu reporte ha sido enviado y ayudará a otros conductores.');
       navigation.goBack();
@@ -101,7 +113,7 @@ export default function ReportScreen({ route, navigation }) {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>Reportar Incidente</Text>
+      <Text style={styles.title}>{editReport ? 'Editar Incidente' : 'Reportar Incidente'}</Text>
 
       <Text style={styles.label}>¿Qué está pasando?</Text>
       <View style={styles.typesContainer}>
@@ -151,18 +163,20 @@ export default function ReportScreen({ route, navigation }) {
         </View>
       )}
 
-      <View style={styles.locationInfo}>
-        <Text style={styles.locationText}>
-          📍 {userLocation.latitude.toFixed(5)}, {userLocation.longitude.toFixed(5)}
-        </Text>
-      </View>
+      {userLocation && (
+        <View style={styles.locationInfo}>
+          <Text style={styles.locationText}>
+            📍 {userLocation.latitude.toFixed(5)}, {userLocation.longitude.toFixed(5)}
+          </Text>
+        </View>
+      )}
 
       <View style={styles.actionButtons}>
         <TouchableOpacity style={styles.cancelButton} onPress={() => navigation.goBack()}>
           <Text style={styles.cancelText}>Cancelar</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.submitButton} onPress={handleSubmit} disabled={loading}>
-          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitText}>Enviar Reporte</Text>}
+          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitText}>{editReport ? 'Guardar Cambios' : 'Enviar Reporte'}</Text>}
         </TouchableOpacity>
       </View>
     </ScrollView>
@@ -179,10 +193,10 @@ const styles = StyleSheet.create({
     flex: 1, backgroundColor: '#fff', borderWidth: 2, borderColor: '#e2e8f0',
     borderRadius: 14, padding: 14, alignItems: 'center', elevation: 1,
   },
-  typeButtonSelected: { borderColor: '#0ea5e9', backgroundColor: '#f0f9ff' },
+  typeButtonSelected: { borderColor: '#0c3563', backgroundColor: '#f0f9ff' },
   typeIcon: { fontSize: 28, marginBottom: 6 },
   typeLabel: { fontSize: 12, fontWeight: '600', color: '#64748b', textAlign: 'center' },
-  typeLabelSelected: { color: '#0ea5e9' },
+  typeLabelSelected: { color: '#0c3563' },
   input: {
     backgroundColor: '#fff', borderWidth: 1, borderColor: '#cbd5e1',
     borderRadius: 12, padding: 14, fontSize: 15, color: '#0f172a',

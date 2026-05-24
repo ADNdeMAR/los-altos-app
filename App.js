@@ -48,7 +48,7 @@ function MainTabs() {
           paddingTop: 6,
           height: 64,
         },
-        tabBarActiveTintColor: '#0ea5e9',
+        tabBarActiveTintColor: '#0c3563',
         tabBarInactiveTintColor: '#94a3b8',
         tabBarLabelStyle: { fontSize: 11, fontWeight: '600', marginTop: 2 },
       }}
@@ -113,10 +113,14 @@ function AppNavigator() {
   );
 }
 
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+
 export default function App() {
   return (
-    <AuthProvider>
-      <AppNavigator />
-    </AuthProvider>
+    <SafeAreaProvider>
+      <AuthProvider>
+        <AppNavigator />
+      </AuthProvider>
+    </SafeAreaProvider>
   );
 }

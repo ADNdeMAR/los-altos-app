@@ -105,7 +105,7 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   buttonMain: {
-    backgroundColor: '#0ea5e9', // Azul vibrante
+    backgroundColor: '#0c3563', // Azul vibrante
     padding: 18,
     borderRadius: 12,
     alignItems: 'center',
@@ -118,13 +118,13 @@ const styles = StyleSheet.create({
   buttonSecondary: {
     backgroundColor: 'transparent',
     borderWidth: 2,
-    borderColor: '#0ea5e9',
+    borderColor: '#0c3563',
     padding: 18,
     borderRadius: 12,
     alignItems: 'center',
   },
   buttonTextSecondary: {
-    color: '#0ea5e9',
+    color: '#0c3563',
     fontSize: 18,
     fontWeight: 'bold',
   },
